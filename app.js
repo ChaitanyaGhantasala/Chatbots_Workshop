@@ -1,60 +1,101 @@
-// Import Modules
-
+// Load the Watson Developer Cloud library.
 var express = require('express');
 var app = express();
-var bodyParser = require('body-parser');
 var watson = require('watson-developer-cloud');
+var bodyParser = require('body-parser');
+var request = require('request');
+var port = process.env.PORT || 8000;
+app.use(bodyParser.urlencoded({
+	extended: true
+}));
+app.use(bodyParser.json())
+var context={};
+var token = '<Your-FB-Page-Access-Token>';
+var FbUserId = '';
+var respBasicData;
 
-// Twilio Credentials
-
-const accountSid = 'AC600982e13d4dcbb82cf7daba17df346c';
-const authToken = '8c30bb714ba53ec346f41f89af9aeccc';
-const client = require('twilio')(accountSid, authToken);
-app.use(bodyParser.urlencoded({ entended: false }));
-var env= require('dotenv').config()
-
-// Watson Credentials
+//Initializing Watson Assiatant
 
 var assistant = new watson.AssistantV1({
-  iam_apikey: 'wfXbQhfsLKWiaMuxZSiyodDF2Wxcu9maLuXXNwmsCNZD',
+  iam_apikey: '<Your-Watson-Assistant-APIKey>',
   version: '2018-09-20',
   url: 'https://gateway-syd.watsonplatform.net/assistant/api'
 });
-var context1 = {};
-app.get('/test', function (req, res) {
-})
-// API
 
-app.post('/api', function (req, res) {
-	console.log("Request Object");
-	var From = req.body.From;
-	console.log(From);
-	assistant.message({
-		workspace_id: 'afff6af9-cd26-4644-96d9-00d6acbc6668',
-		input: { 'text': req.body.Body },
-		context: context1
-	}, function (err, response) {
-		if (err)
-			console.log('error:', err);
-		else {
-				context1 = response.context;
-				var msg = response.output.text[0];
-				console.log("message", msg);
-				client.messages
-					.create({
-						body: msg,
-						from:'whatsapp:+14155238886',
-						to: From
-					})
-					.then(message => console.log(msg))
-					.done();
 
+app.get('/', (req, res) => {
+	console.log('get webhook');
+	if (req.query['hub.verify_token'] === '<Your-Verify-Token>') {
+		res.send(req.query['hub.challenge']);
+	} else
+		res.send('Error when we try to validating your token.');
+});
+
+app.post('/', (req, res) => {
+
+	res.sendStatus(200);
+	for (let i = 0; i < req.body.entry[0].messaging.length; i++) 
+	{
+		FbUserId = req.body.entry[0].messaging[i].sender.id;
+		respBasicData = req.body.entry[0].messaging[i].message.text;
+      var payload = {
+		workspace_id: '<Your-Watson-Assistant-WorkspaceID>',
+		input: {
+			"text": respBasicData
+		},
+		context: context
+	}		
+		assistant.message(payload,  function(err, response) {
+				  if (err)
+					console.log('error:', err);
+				  else{
+					  console.log(JSON.stringify(response, null, 2));	
+                    context=response.context;					  
+				   loginSend(FbUserId,response.output.text[0])
+				  }
+				   
+				});
 	}
-	})
 
-});
-//PORT Listen 
-app.listen(process.env.PORT||8000, function () {
-	console.log("Server is running at 8000");
-});
+	});
+	
+// Getting user details using Facebook Graph API
+	function loginSend(id, text)
+	{
 
+    var dataPost = {
+        url: 'https://graph.facebook.com/v2.6/me/messages',
+        qs: {
+            access_token: token
+        },
+        method: 'POST',
+        json: {
+            recipient: {
+                id: id
+            },
+            message: {
+                "text": text	  
+            }
+        }
+    };
+    requestFunction(dataPost)
+}
+
+function requestFunction(dataPost) {
+
+    request(dataPost, (error, response, body) => {
+        if (error) {
+            console.log('Error when we try to sending message: ', error);
+        } else if (response.body.error) {
+            console.log('Error: ', response.body.error);
+        } else {
+            console.log("Successfully Sent the message");
+        }
+    });
+
+}
+
+app.listen(port, function() {
+  console.log('running on 8000');
+});
+ 
